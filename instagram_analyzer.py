@@ -5,11 +5,6 @@ import time
 import random
 from datetime import datetime
 import os
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Configuration
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
@@ -51,20 +46,22 @@ def get_instagram_data(username):
     )
     
     try:
-        logger.info(f"Collecting data for @{username}")
-        time.sleep(random.uniform(2.5, 6.3))
+        # Randomized delay pattern
+        time.sleep(random.uniform(0.5, 2.5))
         
+        # Configure session
         L.context._session.headers.update(CUSTOM_HEADERS)
-        L.context._session.verify = True
+        L.context._session.verify = True  # Enable SSL verification
         
         profile = instaloader.Profile.from_username(L.context, username)
         
         if profile.is_private:
             return {"error": f"Private profile @{username}"}
 
+        # Limited post collection with randomized intervals
         posts = []
         for i, post in enumerate(profile.get_posts()):
-            if i >= 3:
+            if i >= 3:  # Only get 3 posts
                 break
             posts.append({
                 "id": post.shortcode,
@@ -94,55 +91,55 @@ def get_instagram_data(username):
     except instaloader.exceptions.ConnectionException as e:
         return {"error": f"Connection issue: {str(e)}"}
     except Exception as e:
-        logger.error(f"Instagram error: {str(e)}")
         return {"error": f"Scraping error: {str(e)}"}
 
 def generate_company_report(instagram_data):
     """Generate company profile from Instagram data"""
+    analysis_prompt = f"""
+    Analyze this social media profile to create detailed company report:
+    {json.dumps(instagram_data, indent=2)}
+    
+    Include in JSON format:
+    - company_name
+    - industry
+    - core_offerings (list)
+    - target_demographics
+    - unique_value_proposition
+    - brand_voice
+    - estimated_team_size
+    - geographic_operation
+    - content_strategy_analysis
+    """
+    
     try:
-        analysis_prompt = f"""
-        Analyze this social media profile to create detailed company report:
-        {json.dumps(instagram_data, indent=2)}
-        
-        Include in JSON format:
-        - company_name
-        - industry
-        - core_offerings (list)
-        - target_demographics
-        - unique_value_proposition
-        - brand_voice
-        - estimated_team_size
-        - geographic_operation
-        - content_strategy_analysis
-        """
-        
         response = model.generate_content(analysis_prompt)
-        return safe_json_parse(response.text)
+        report = safe_json_parse(response.text)
+        return report
     except Exception as e:
         return {"error": f"Analysis failed: {str(e)}"}
 
 def find_competitors(company_report):
     """Find competitors using Google-grounded search"""
+    prompt = f"""
+    Based on this company profile, identify top competitors with Instagram handles.
+    Use Google Search grounding for accuracy. Return JSON format:
+    {{
+        "competitors": [
+            {{
+                "name": "",
+                "industry_match": "",
+                "instagram": "",
+                "competition_level": "high/medium/low",
+                "reason": ""
+            }}
+        ]
+    }}
+    
+    Company Profile:
+    {json.dumps(company_report, indent=2)}
+    """
+    
     try:
-        prompt = f"""
-        Based on this company profile, identify top competitors with Instagram handles.
-        Use Google Search grounding for accuracy. Return JSON format:
-        {{
-            "competitors": [
-                {{
-                    "name": "",
-                    "industry_match": "",
-                    "instagram": "",
-                    "competition_level": "high/medium/low",
-                    "reason": ""
-                }}
-            ]
-        }}
-        
-        Company Profile:
-        {json.dumps(company_report, indent=2)}
-        """
-        
         response = model.generate_content(prompt)
         return safe_json_parse(response.text).get("competitors", [])
     except Exception as e:
@@ -150,52 +147,61 @@ def find_competitors(company_report):
 
 def analyze_performance(data):
     """Generate performance insights"""
+    prompt = f"""
+    Analyze social media performance metrics and generate insights:
+    {json.dumps(data, indent=2)}
+    
+    Include in JSON:
+    - engagement_rate
+    - optimal_posting_times
+    - content_type_breakdown
+    - hashtag_performance
+    - growth_strategy
+    - improvement_recommendations
+    """
+    
     try:
-        prompt = f"""
-        Analyze social media performance metrics and generate insights:
-        {json.dumps(data, indent=2)}
-        
-        Include in JSON:
-        - engagement_rate
-        - optimal_posting_times
-        - content_type_breakdown
-        - hashtag_performance
-        - growth_strategy
-        - improvement_recommendations
-        """
-        
         response = model.generate_content(prompt)
         return safe_json_parse(response.text)
     except Exception as e:
         return {"error": f"Performance analysis failed: {str(e)}"}
 
 def main():
-    TARGET_ACCOUNT = os.getenv('INSTAGRAM_ACCOUNT', 'cocacola')
+    # Start execution timer
+    start_time = time.time()
     
+    # Only change needed 👇 (public Instagram handle)
+    TARGET_ACCOUNT = "nike"
+    
+    # Retry mechanism with exponential backoff
     max_retries = 3
     company_data = {}
     for attempt in range(max_retries):
-        logger.info(f"Attempt {attempt+1}/{max_retries}")
+        print(f"Attempt {attempt+1}/{max_retries} to collect data...")
         company_data = get_instagram_data(TARGET_ACCOUNT)
         if "error" not in company_data:
             break
-        wait_time = 2 ** (attempt + 1) + random.uniform(0, 5)
-        logger.info(f"Waiting {wait_time:.1f}s before retry...")
+        wait_time = 2 ** (attempt + 1) + random.uniform(0, 2)
+        print(f"Waiting {wait_time:.1f} seconds before retry...")
         time.sleep(wait_time)
     
     if "error" in company_data:
-        logger.error(f"Final error: {company_data['error']}")
+        print(f"❌ Final error: {company_data['error']}")
+        # Calculate total time even on error
+        total_time = time.time() - start_time
+        print(f"⏱️ Execution time: {total_time:.2f} seconds")
         return
     
+    # Generate reports
     company_report = generate_company_report(company_data)
     competitors = find_competitors(company_report)
     
+    # Analyze competitors
     competitor_analysis = []
-    for comp in competitors[:2]:
+    for comp in competitors[:2]:  # Limit to 2 competitors
         if comp.get('instagram'):
-            handle = comp['instagram'].lstrip('@')
-            logger.info(f"Analyzing competitor: @{handle}")
-            comp_data = get_instagram_data(handle)
+            print(f"Analyzing competitor: {comp['instagram']}")
+            comp_data = get_instagram_data(comp['instagram'].lstrip('@'))
             if "error" not in comp_data:
                 analysis = analyze_performance(comp_data)
                 competitor_analysis.append({
@@ -203,8 +209,9 @@ def main():
                     "data": comp_data,
                     "analysis": analysis
                 })
-            time.sleep(random.uniform(5, 10))
+            time.sleep(random.uniform(1, 3))
     
+    # Generate final report
     final_report = {
         "target_analysis": analyze_performance(company_data),
         "company_profile": company_report,
@@ -212,10 +219,17 @@ def main():
         "generated_at": datetime.utcnow().isoformat()
     }
     
-    with open("social_media_audit.json", "w") as f:
+    # Save results
+    with open("social_media_auditokfinal.json", "w") as f:
         json.dump(final_report, f, indent=2)
     
-    logger.info("✅ Report generated: social_media_audit.json")
+    # Calculate and display total execution time
+    total_time = time.time() - start_time
+    minutes = int(total_time // 60)
+    seconds = total_time % 60
+    
+    print("✅ Report generated: social_media_audit.json")
+    print(f"⏱️ Total execution time: {minutes} minutes {seconds:.2f} seconds")
 
 if __name__ == "__main__":
     main()
