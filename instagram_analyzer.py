@@ -39,16 +39,26 @@ def safe_json_parse(text):
 def get_instagram_data(username):
     """Advanced Instagram scraper with anti-blocking features"""
     L = instaloader.Instaloader(
-        user_agent=CUSTOM_HEADERS['User-Agent'],
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
         sleep=True,
         quiet=True,
-        request_timeout=45,
+        request_timeout=60,  # Increased timeout
         max_connection_attempts=3
     )
     
     try:
         time.sleep(random.uniform(0.5, 2.5))
-        L.context._session.headers.update(CUSTOM_HEADERS)
+        # Updated headers with critical Instagram API requirements
+        L.context._session.headers.update({
+            "Accept-Language": "en-US,en;q=0.9",
+            "X-IG-App-ID": "936619743392459",  # Critical for API access
+            "DNT": "1",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "Referer": "https://www.instagram.com/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        })
         L.context._session.verify = True
         
         profile = instaloader.Profile.from_username(L.context, username)
