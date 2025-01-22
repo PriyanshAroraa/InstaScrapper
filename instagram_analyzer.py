@@ -3,6 +3,7 @@ import json
 import google.generativeai as genai
 import time
 import random
+import requests
 from datetime import datetime
 import os
 import logging
@@ -15,12 +16,16 @@ model = genai.GenerativeModel(
     system_instruction="You are a professional social media analyst."
 )
 
-# Anti-blocking configuration
-CUSTOM_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Referer': 'https://www.instagram.com/',
-    'DNT': '1'
+# Anti-blocking setup
+MOBILE_HEADERS = {
+    "X-IG-App-ID": "238260118172367",
+    "Accept-Language": "en-US,en;q=0.9",
+    "DNT": "1",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "Referer": "https://www.instagram.com/",
+    "X-Requested-With": "XMLHttpRequest"
 }
 
 def safe_json_parse(text):
@@ -37,38 +42,49 @@ def safe_json_parse(text):
             return {"error": "JSON parsing failed", "raw_response": clean_text[:200]}
 
 def get_instagram_data(username):
-    """Advanced Instagram scraper with anti-blocking features"""
-    L = instaloader.Instaloader(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        sleep=True,
-        quiet=True,
-        request_timeout=60,  # Increased timeout
-        max_connection_attempts=3
-    )
-    
+    """Instagram scraper with IP rotation prevention"""
     try:
-        time.sleep(random.uniform(0.5, 2.5))
-        # Updated headers with critical Instagram API requirements
-        L.context._session.headers.update({
-            "Accept-Language": "en-US,en;q=0.9",
-            "X-IG-App-ID": "936619743392459",  # Critical for API access
-            "DNT": "1",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-origin",
-            "Referer": "https://www.instagram.com/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        # Random mobile user agents
+        user_agent = random.choice([
+            "Mozilla/5.0 (Linux; Android 12; SM-S906N Build/QP1A.190711.020; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/125.0.6422.168 Mobile Safari/537.36",
+            "Mozilla/5.0 (iPhone14,3; U; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/602.1.50 (KHTML, like Gecko) Version/15.0 Mobile/19A346 Safari/602.1"
+        ])
+        
+        L = instaloader.Instaloader(
+            user_agent=user_agent,
+            sleep=True,
+            quiet=True,
+            request_timeout=120,
+            max_connection_attempts=2
+        )
+        
+        # Fresh session with Tor proxy
+        L.context._session = requests.Session()
+        L.context._session.proxies = {
+            'http': 'socks5://localhost:9050',
+            'https': 'socks5://localhost:9050'
+        }
+        
+        # Dynamic headers
+        headers = MOBILE_HEADERS.copy()
+        headers.update({
+            "X-IG-Device-ID": f"android-{''.join(random.choices('abcdef0123456789', k=16))}",
+            "User-Agent": user_agent
         })
-        L.context._session.verify = True
+        L.context._session.headers.update(headers)
+        
+        # Human-like delay
+        time.sleep(random.uniform(3.5, 7.8))
         
         profile = instaloader.Profile.from_username(L.context, username)
         
         if profile.is_private:
             return {"error": f"Private profile @{username}"}
 
+        # Random post collection (1-3 posts)
         posts = []
         for i, post in enumerate(profile.get_posts()):
-            if i >= 3:
+            if i >= random.randint(1, 3):
                 break
             posts.append({
                 "id": post.shortcode,
@@ -78,8 +94,8 @@ def get_instagram_data(username):
                 "type": "video" if post.is_video else "image",
                 "timestamp": post.date_utc.isoformat()
             })
-            time.sleep(random.uniform(1.8, 4.2))
-
+            time.sleep(random.uniform(2.8, 5.4))
+        
         return {
             "username": profile.username,
             "full_name": profile.full_name,
@@ -94,11 +110,9 @@ def get_instagram_data(username):
         }
     
     except instaloader.exceptions.QueryReturnedBadRequestException:
-        return {"error": "Instagram API blocked - try again later"}
-    except instaloader.exceptions.ConnectionException as e:
-        return {"error": f"Connection issue: {str(e)}"}
+        return {"error": "Instagram API blocked - wait 24 hours"}
     except Exception as e:
-        return {"error": f"Scraping error: {str(e)}"}
+        return {"error": f"Request failed: {str(e)}"}
 
 def generate_company_report(instagram_data):
     """Generate company profile from Instagram data"""
@@ -118,7 +132,6 @@ def generate_company_report(instagram_data):
         - geographic_operation
         - content_strategy_analysis
         """
-        
         response = model.generate_content(analysis_prompt)
         return safe_json_parse(response.text)
     except Exception as e:
@@ -145,7 +158,6 @@ def find_competitors(company_report):
         Company Profile:
         {json.dumps(company_report, indent=2)}
         """
-        
         response = model.generate_content(prompt)
         return safe_json_parse(response.text).get("competitors", [])
     except Exception as e:
@@ -166,7 +178,6 @@ def analyze_performance(data):
         - growth_strategy
         - improvement_recommendations
         """
-        
         response = model.generate_content(prompt)
         return safe_json_parse(response.text)
     except Exception as e:
@@ -176,7 +187,7 @@ def analyze_account(target_account):
     """Main analysis workflow"""
     start_time = time.time()
     
-    max_retries = 3
+    max_retries = 2
     company_data = {}
     for attempt in range(max_retries):
         logging.info(f"Attempt {attempt+1}/{max_retries} to collect data...")
@@ -188,10 +199,7 @@ def analyze_account(target_account):
         time.sleep(wait_time)
     
     if "error" in company_data:
-        return {
-            "error": company_data['error'],
-            "execution_time": time.time() - start_time
-        }
+        return {"error": company_data['error'], "execution_time": time.time() - start_time}
     
     company_report = generate_company_report(company_data)
     competitors = find_competitors(company_report)
@@ -209,7 +217,7 @@ def analyze_account(target_account):
                     "data": comp_data,
                     "analysis": analysis
                 })
-            time.sleep(random.uniform(1, 3))
+            time.sleep(random.uniform(3, 6))
     
     return {
         "target_analysis": analyze_performance(company_data),
